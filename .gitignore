@@ -1,0 +1,9 @@
+node_modules
+.next
+out
+.env
+.env.local
+coverage
+shop_export
+shop.db
+shop.db.zip
