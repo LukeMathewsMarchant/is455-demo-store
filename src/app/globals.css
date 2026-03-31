@@ -1,3 +1,4 @@
+
 :root {
   --bg: #f6f8fb;
   --card: #ffffff;
@@ -15,22 +16,29 @@ body {
   color: var(--text);
 }
 main {
-  max-width: 960px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 2rem 1rem 4rem;
 }
-.header {
-  margin-bottom: 1.5rem;
+.header { margin-bottom: 1.5rem; }
+.header.split {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
 }
 .subtitle {
   color: var(--muted);
   margin-top: 0.25rem;
 }
+.subtitle.compact { margin: 0; }
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 1rem;
 }
+.grid.two-col { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.grid.three-col { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .card {
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -38,6 +46,7 @@ main {
   padding: 1rem;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
+.spacedTop { margin-top: 1rem; }
 .badge {
   display: inline-block;
   font-size: 0.75rem;
@@ -50,6 +59,11 @@ main {
   font-size: 1.25rem;
   font-weight: 600;
   margin: 0.5rem 0;
+}
+.metric {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0.5rem 0 0;
 }
 .form-row {
   display: grid;
@@ -77,6 +91,35 @@ button {
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+.linkButton {
+  display: inline-block;
+  text-decoration: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.55rem 0.85rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.linkButton.small { padding: 0.45rem 0.75rem; font-size: 0.85rem; }
+.tableWrap { overflow-x: auto; }
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+.table th,
+.table td {
+  padding: 0.65rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 0.9rem;
+}
+.inlineActions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
 .success {
   margin-top: 0.75rem;

@@ -9,44 +9,55 @@ const SHIPPING_FEE = 5;
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as CreateOrderInput;
-    if (!body.fullName || !body.email || !body.zipCode || body.quantity < 1) {
+
+    if (!body.zipCode || !body.productId || body.quantity < 1) {
       return NextResponse.json({ error: "Invalid request payload" }, { status: 400 });
     }
 
     const supabase = getSupabaseServerClient();
-
-    const { data: existingCustomer } = await supabase
-      .from("customers")
-      .select("customer_id")
-      .eq("email", body.email)
-      .maybeSingle();
-
-    let customerId = existingCustomer?.customer_id as number | undefined;
+    let customerId = body.customerId;
 
     if (!customerId) {
-      const { data: insertedCustomer, error: customerErr } = await supabase
-        .from("customers")
-        .insert({
-          full_name: body.fullName,
-          email: body.email,
-          gender: "Non-binary",
-          birthdate: "1990-01-01",
-          created_at: new Date().toISOString(),
-          zip_code: body.zipCode,
-          customer_segment: "standard",
-          loyalty_tier: "none",
-          is_active: true
-        })
-        .select("customer_id")
-        .single();
-
-      if (customerErr || !insertedCustomer) {
-        throw new Error(customerErr?.message ?? "Failed to create customer");
+      if (!body.fullName || !body.email) {
+        return NextResponse.json({ error: "Missing customer data" }, { status: 400 });
       }
 
-      customerId = insertedCustomer.customer_id;
-    }
+      const { data: existingCustomer, error: existingErr } = await supabase
+        .from("customers")
+        .select("customer_id")
+        .eq("email", body.email)
+        .maybeSingle();
 
+      if (existingErr) {
+        throw new Error(existingErr.message);
+      }
+
+      customerId = existingCustomer?.customer_id as number | undefined;
+
+      if (!customerId) {
+        const { data: insertedCustomer, error: customerErr } = await supabase
+          .from("customers")
+          .insert({
+            full_name: body.fullName,
+            email: body.email,
+            gender: "Non-binary",
+            birthdate: "1990-01-01",
+            created_at: new Date().toISOString(),
+            zip_code: body.zipCode,
+            customer_segment: "standard",
+            loyalty_tier: "none",
+            is_active: true
+          })
+          .select("customer_id")
+          .single();
+
+        if (customerErr || !insertedCustomer) {
+          throw new Error(customerErr?.message ?? "Failed to create customer");
+        }
+
+        customerId = insertedCustomer.customer_id;
+      }
+    }
 
     if (!customerId) {
       throw new Error("Failed to resolve customer id");
@@ -83,7 +94,7 @@ export async function POST(request: Request) {
         shipping_fee: SHIPPING_FEE,
         tax_amount: tax,
         order_total: total,
-        risk_score: 0,
+        risk_score: Math.floor(Math.random() * 100),
         is_fraud: false
       })
       .select("order_id")
