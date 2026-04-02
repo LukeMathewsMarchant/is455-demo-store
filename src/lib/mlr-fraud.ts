@@ -1,3 +1,70 @@
+export type MlrFraudFeaturePayload = {
+  orderId: number;
+  customerId: number;
+  orderDatetime: string;
+  billingZip: string | null;
+  shippingZip: string | null;
+  shippingState: string | null;
+  paymentMethod: string;
+  deviceType: string;
+  ipCountry: string;
+  promoUsed: boolean;
+  promoCode: string | null;
+  orderSubtotal: number;
+  shippingFee: number;
+  taxAmount: number;
+  orderTotal: number;
+  riskScore: number;
+  items: { productId: number; quantity: number; unitPrice: number }[];
+};
+
+/** Build one model row (snake_case) for POST /score — missing columns are filled server-side. */
+export function payloadToScoreRow(p: MlrFraudFeaturePayload): Record<string, unknown> {
+  const totalQty = p.items.reduce((s, i) => s + i.quantity, 0);
+  return {
+    order_id: p.orderId,
+    customer_id: p.customerId,
+    order_datetime: p.orderDatetime,
+    billing_zip: p.billingZip,
+    shipping_zip: p.shippingZip,
+    shipping_state: p.shippingState,
+    payment_method: p.paymentMethod,
+    device_type: p.deviceType,
+    ip_country: p.ipCountry,
+    promo_used: p.promoUsed,
+    promo_code: p.promoCode,
+    order_subtotal: p.orderSubtotal,
+    shipping_fee: p.shippingFee,
+    tax_amount: p.taxAmount,
+    order_total: p.orderTotal,
+    risk_score: p.riskScore,
+    total_qty: totalQty,
+    item_count: p.items.length
+  };
+}
+
+/** Parses FastAPI /score JSON — prefers `predicted_fraud` (yes/no), else `fraud_risk` threshold. */
+export function parseFraudScoreApiResponse(body: unknown): boolean | null {
+  if (body && typeof body === "object") {
+    const o = body as Record<string, unknown>;
+    const results = o.results;
+    if (Array.isArray(results) && results.length > 0) {
+      const first = results[0];
+      if (first && typeof first === "object") {
+        const row = first as Record<string, unknown>;
+        if (typeof row.predicted_fraud === "boolean") {
+          return row.predicted_fraud;
+        }
+        const fr = row.fraud_risk;
+        if (typeof fr === "number" && !Number.isNaN(fr)) {
+          return fr >= 0.5;
+        }
+      }
+    }
+  }
+  return parseFraudPrediction(body);
+}
+
 /** Parses ML service JSON into a boolean fraud label. Returns null if unknown. */
 export function parseFraudPrediction(body: unknown): boolean | null {
   if (body === null || body === undefined) {
@@ -24,23 +91,3 @@ export function parseFraudPrediction(body: unknown): boolean | null {
   }
   return null;
 }
-
-export type MlrFraudFeaturePayload = {
-  orderId: number;
-  customerId: number;
-  orderDatetime: string;
-  billingZip: string | null;
-  shippingZip: string | null;
-  shippingState: string | null;
-  paymentMethod: string;
-  deviceType: string;
-  ipCountry: string;
-  promoUsed: boolean;
-  promoCode: string | null;
-  orderSubtotal: number;
-  shippingFee: number;
-  taxAmount: number;
-  orderTotal: number;
-  riskScore: number;
-  items: { productId: number; quantity: number; unitPrice: number }[];
-};

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase";
-import { parseFraudPrediction, type MlrFraudFeaturePayload } from "@/lib/mlr-fraud";
+import {
+  parseFraudScoreApiResponse,
+  payloadToScoreRow,
+  type MlrFraudFeaturePayload
+} from "@/lib/mlr-fraud";
 
 const PAGE_SIZE = 500;
 
@@ -98,10 +102,12 @@ async function fetchAllOrdersWithItems(supabase: ReturnType<typeof getSupabaseSe
 }
 
 export async function POST() {
-  const url = process.env.MLR_API_URL?.trim();
-  if (!url) {
+  const baseUrl = process.env.MLR_API_URL?.trim();
+  if (!baseUrl) {
     return NextResponse.json({ error: "MLR_API_URL is not configured" }, { status: 500 });
   }
+
+  const scoreUrl = `${baseUrl.replace(/\/$/, "")}/score`;
 
   const supabase = getSupabaseServerClient();
   let orders: OrderWithItems[];
@@ -122,10 +128,14 @@ export async function POST() {
     const payload = toPayload(row);
 
     try {
-      const res = await fetch(url, {
+      const res = await fetch(scoreUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          rows: [payloadToScoreRow(payload)],
+          top_n: 1
+        }),
+        cache: "no-store"
       });
 
       const text = await res.text();
@@ -144,7 +154,7 @@ export async function POST() {
         continue;
       }
 
-      const predicted = parseFraudPrediction(json);
+      const predicted = parseFraudScoreApiResponse(json);
       if (predicted === null) {
         failed += 1;
         errors.push(`order ${row.order_id}: could not parse fraud prediction`);
