@@ -126,7 +126,7 @@ export default async function CustomerDashboardPage({ params }: { params: Promis
           <h1>{customer.full_name}</h1>
           <p className="subtitle">{customer.email}</p>
         </div>
-        <a className="linkButton small" href={`/customers/${customer.customer_id}/orders`}>View order history</a>
+        <a className="linkButton small" href="/warehouse">View order history</a>
       </header>
 
       <section className="grid three-col">
