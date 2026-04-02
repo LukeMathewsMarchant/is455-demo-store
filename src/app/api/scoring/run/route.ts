@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+
+export const maxDuration = 300;
 import { getSupabaseServerClient } from "@/lib/supabase";
 import {
-  parseFraudScoreApiResponse,
+  parseBatchFraudScoreApiResponse,
   payloadToScoreRow,
   type MlrFraudFeaturePayload
 } from "@/lib/mlr-fraud";
@@ -123,16 +125,20 @@ export async function POST() {
   let failed = 0;
   const errors: string[] = [];
 
-  for (const row of orders) {
-    processed += 1;
-    const payload = toPayload(row);
+  const CHUNK_SIZE = 100;
+
+  for (let i = 0; i < orders.length; i += CHUNK_SIZE) {
+    const chunk = orders.slice(i, i + CHUNK_SIZE);
+    processed += chunk.length;
 
     try {
+      const payloads = chunk.map((c) => payloadToScoreRow(toPayload(c)));
+      
       const res = await fetch(scoreUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          rows: [payloadToScoreRow(payload)],
+          rows: payloads,
           top_n: 1
         }),
         cache: "no-store"
@@ -143,40 +149,42 @@ export async function POST() {
       try {
         json = text ? JSON.parse(text) : null;
       } catch {
-        failed += 1;
-        errors.push(`order ${row.order_id}: response is not JSON`);
+        failed += chunk.length;
+        errors.push(`Batch starting with order ${chunk[0].order_id}: response is not JSON`);
         continue;
       }
 
       if (!res.ok) {
-        failed += 1;
-        errors.push(`order ${row.order_id}: ML returned ${res.status}`);
+        failed += chunk.length;
+        errors.push(`Batch starting with order ${chunk[0].order_id}: ML returned ${res.status}`);
         continue;
       }
 
-      const predicted = parseFraudScoreApiResponse(json);
-      if (predicted === null) {
-        failed += 1;
-        errors.push(`order ${row.order_id}: could not parse fraud prediction`);
+      const predictedBatch = parseBatchFraudScoreApiResponse(json);
+      if (!predictedBatch) {
+        failed += chunk.length;
+        errors.push(`Batch starting with order ${chunk[0].order_id}: could not parse fraud predictions`);
         continue;
       }
 
-      const { error: upErr } = await supabase
-        .from("orders")
-        .update({ predicted_fraud: predicted })
-        .eq("order_id", row.order_id);
+      // Concurrently update all elements in the chunk
+      await Promise.all(predictedBatch.map(async (prediction) => {
+        const { error: upErr } = await supabase
+          .from("orders")
+          .update({ predicted_fraud: prediction.predicted_fraud })
+          .eq("order_id", prediction.order_id);
 
-      if (upErr) {
-        failed += 1;
-        errors.push(`order ${row.order_id}: ${upErr.message}`);
-        continue;
-      }
+        if (upErr) {
+          errors.push(`order ${prediction.order_id}: ${upErr.message}`);
+        } else {
+          updated += 1;
+        }
+      }));
 
-      updated += 1;
     } catch (err) {
-      failed += 1;
+      failed += chunk.length;
       const msg = err instanceof Error ? err.message : "request failed";
-      errors.push(`order ${row.order_id}: ${msg}`);
+      errors.push(`Batch starting with order ${chunk[0].order_id}: ${msg}`);
     }
   }
 

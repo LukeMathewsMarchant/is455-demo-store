@@ -91,3 +91,23 @@ export function parseFraudPrediction(body: unknown): boolean | null {
   }
   return null;
 }
+
+/** Parses FastAPI /score JSON when multiple rows are returned and extracts the order_id. */
+export function parseBatchFraudScoreApiResponse(body: unknown): { order_id: number; predicted_fraud: boolean }[] | null {
+  if (body && typeof body === "object") {
+    const o = body as Record<string, unknown>;
+    const results = o.results;
+    if (Array.isArray(results)) {
+      return results.map(row => {
+        let pf = false;
+        if (typeof row.predicted_fraud === "boolean") {
+          pf = row.predicted_fraud;
+        } else if (typeof row.fraud_risk === "number" && !Number.isNaN(row.fraud_risk)) {
+          pf = row.fraud_risk >= 0.5;
+        }
+        return { order_id: Number(row.order_id), predicted_fraud: pf };
+      }).filter(r => !Number.isNaN(r.order_id));
+    }
+  }
+  return null;
+}
