@@ -14,8 +14,10 @@ export default function HomePage() {
         </article>
 
         <article className="card">
-          <h3>Warehouse Priority Queue</h3>
-          <p className="subtitle">Top 50 orders by predicted late-delivery probability for operations review.</p>
+          <h3>Warehouse fraud review</h3>
+          <p className="subtitle">
+            All orders (newest first) with predicted fraud and admin fraud flags for operations review.
+          </p>
           <a className="linkButton" href="/warehouse">Open warehouse page</a>
         </article>
       </section>

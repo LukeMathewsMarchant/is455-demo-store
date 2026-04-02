@@ -1,0 +1,179 @@
+import { NextResponse } from "next/server";
+import { getSupabaseServerClient } from "@/lib/supabase";
+import { parseFraudPrediction, type MlrFraudFeaturePayload } from "@/lib/mlr-fraud";
+
+const PAGE_SIZE = 500;
+
+type OrderWithItems = {
+  order_id: number;
+  customer_id: number;
+  order_datetime: string;
+  billing_zip: string | null;
+  shipping_zip: string | null;
+  shipping_state: string | null;
+  payment_method: string;
+  device_type: string;
+  ip_country: string;
+  promo_used: boolean;
+  promo_code: string | null;
+  order_subtotal: number;
+  shipping_fee: number;
+  tax_amount: number;
+  order_total: number;
+  risk_score: number;
+  order_items: { product_id: number; quantity: number; unit_price: number }[] | null;
+};
+
+function toPayload(row: OrderWithItems): MlrFraudFeaturePayload {
+  const items = (row.order_items ?? []).map((it) => ({
+    productId: it.product_id,
+    quantity: it.quantity,
+    unitPrice: Number(it.unit_price)
+  }));
+
+  return {
+    orderId: row.order_id,
+    customerId: row.customer_id,
+    orderDatetime: row.order_datetime,
+    billingZip: row.billing_zip,
+    shippingZip: row.shipping_zip,
+    shippingState: row.shipping_state,
+    paymentMethod: row.payment_method,
+    deviceType: row.device_type,
+    ipCountry: row.ip_country,
+    promoUsed: row.promo_used,
+    promoCode: row.promo_code,
+    orderSubtotal: Number(row.order_subtotal),
+    shippingFee: Number(row.shipping_fee),
+    taxAmount: Number(row.tax_amount),
+    orderTotal: Number(row.order_total),
+    riskScore: Number(row.risk_score),
+    items
+  };
+}
+
+async function fetchAllOrdersWithItems(supabase: ReturnType<typeof getSupabaseServerClient>) {
+  const rows: OrderWithItems[] = [];
+  let from = 0;
+  const select = `
+    order_id,
+    customer_id,
+    order_datetime,
+    billing_zip,
+    shipping_zip,
+    shipping_state,
+    payment_method,
+    device_type,
+    ip_country,
+    promo_used,
+    promo_code,
+    order_subtotal,
+    shipping_fee,
+    tax_amount,
+    order_total,
+    risk_score,
+    order_items ( product_id, quantity, unit_price )
+  `;
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from("orders")
+      .select(select)
+      .order("order_datetime", { ascending: false })
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const batch = (data ?? []) as OrderWithItems[];
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) {
+      break;
+    }
+    from += PAGE_SIZE;
+  }
+
+  return rows;
+}
+
+export async function POST() {
+  const url = process.env.MLR_API_URL?.trim();
+  if (!url) {
+    return NextResponse.json({ error: "MLR_API_URL is not configured" }, { status: 500 });
+  }
+
+  const supabase = getSupabaseServerClient();
+  let orders: OrderWithItems[];
+  try {
+    orders = await fetchAllOrdersWithItems(supabase);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Failed to load orders";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+
+  let processed = 0;
+  let updated = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  for (const row of orders) {
+    processed += 1;
+    const payload = toPayload(row);
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const text = await res.text();
+      let json: unknown;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        failed += 1;
+        errors.push(`order ${row.order_id}: response is not JSON`);
+        continue;
+      }
+
+      if (!res.ok) {
+        failed += 1;
+        errors.push(`order ${row.order_id}: ML returned ${res.status}`);
+        continue;
+      }
+
+      const predicted = parseFraudPrediction(json);
+      if (predicted === null) {
+        failed += 1;
+        errors.push(`order ${row.order_id}: could not parse fraud prediction`);
+        continue;
+      }
+
+      const { error: upErr } = await supabase
+        .from("orders")
+        .update({ predicted_fraud: predicted })
+        .eq("order_id", row.order_id);
+
+      if (upErr) {
+        failed += 1;
+        errors.push(`order ${row.order_id}: ${upErr.message}`);
+        continue;
+      }
+
+      updated += 1;
+    } catch (err) {
+      failed += 1;
+      const msg = err instanceof Error ? err.message : "request failed";
+      errors.push(`order ${row.order_id}: ${msg}`);
+    }
+  }
+
+  return NextResponse.json({
+    processed,
+    updated,
+    failed,
+    errors: errors.slice(0, 20)
+  });
+}

@@ -95,7 +95,8 @@ export async function POST(request: Request) {
         tax_amount: tax,
         order_total: total,
         risk_score: Math.floor(Math.random() * 100),
-        is_fraud: false
+        is_fraud: false,
+        predicted_fraud: null
       })
       .select("order_id")
       .single();

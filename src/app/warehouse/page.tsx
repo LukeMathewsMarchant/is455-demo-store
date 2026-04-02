@@ -1,46 +1,28 @@
+import { OrderFraudCheckbox } from "@/components/OrderFraudCheckbox";
 import { RunScoringButton } from "@/components/RunScoringButton";
-import { getSupabaseServerClient } from "@/lib/supabase";
+import { fetchAllOrdersNewestFirst } from "@/lib/warehouse-orders";
 
 export const dynamic = "force-dynamic";
 
-type QueueRow = {
-  order_id: number;
-  customer_id: number;
-  order_datetime: string;
-  shipping_state: string | null;
-  risk_score: number;
-  order_total: number;
-};
-
-async function getQueueRows(): Promise<QueueRow[]> {
-  const supabase = getSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("orders")
-    .select("order_id,customer_id,order_datetime,shipping_state,risk_score,order_total")
-    .order("risk_score", { ascending: false })
-    .limit(50);
-
-  if (error) {
-    throw new Error(error.message);
+function formatPredictedFraud(value: boolean | null): string {
+  if (value === null) {
+    return "—";
   }
-
-  return (data ?? []) as QueueRow[];
-}
-
-function toProbabilityPercent(riskScore: number): string {
-  const percent = Math.min(99, Math.max(1, Math.round(Number(riskScore))));
-  return `${percent}%`;
+  return value ? "Yes" : "No";
 }
 
 export default async function WarehousePage() {
-  const queue = await getQueueRows();
+  const queue = await fetchAllOrdersNewestFirst();
 
   return (
     <main>
       <header className="header split">
         <div>
-          <h1>Late Delivery Priority Queue</h1>
-          <p className="subtitle">Top 50 orders ranked by predicted late-delivery probability.</p>
+          <h1>Fraud review queue</h1>
+          <p className="subtitle">
+            All orders, newest first. Run scoring to fill model predictions; use the checkbox for admin fraud
+            flags.
+          </p>
         </div>
         <RunScoringButton />
       </header>
@@ -50,11 +32,12 @@ export default async function WarehousePage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Rank</th>
+                <th>#</th>
                 <th>Order ID</th>
                 <th>Customer</th>
-                <th>Predicted Late Probability</th>
-                <th>Order Total</th>
+                <th>Predicted fraud</th>
+                <th>Admin: fraud</th>
+                <th>Order total</th>
                 <th>State</th>
                 <th>Created</th>
               </tr>
@@ -67,7 +50,10 @@ export default async function WarehousePage() {
                   <td>
                     <a href={`/customers/${row.customer_id}`}>#{row.customer_id}</a>
                   </td>
-                  <td>{toProbabilityPercent(Number(row.risk_score))}</td>
+                  <td>{formatPredictedFraud(row.predicted_fraud)}</td>
+                  <td className="tableCheckbox">
+                    <OrderFraudCheckbox orderId={row.order_id} initialChecked={row.is_fraud} />
+                  </td>
                   <td>${Number(row.order_total).toFixed(2)}</td>
                   <td>{row.shipping_state ?? "-"}</td>
                   <td>{new Date(row.order_datetime).toLocaleString()}</td>
