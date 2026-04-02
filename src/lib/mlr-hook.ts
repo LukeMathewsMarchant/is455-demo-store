@@ -1,3 +1,5 @@
+import { getSupabaseServerClient } from "@/lib/supabase";
+
 export type MlrOrderFeatures = {
   orderId: number;
   customerId: number;
@@ -56,9 +58,27 @@ export async function onOrderCreatedForMlr(features: MlrOrderFeatures): Promise<
     }
 
     try {
-      const data = JSON.parse(text) as unknown;
+      const data = JSON.parse(text) as any;
       console.log("Fraud score response:", data);
-    } catch {
+      
+      if (data && Array.isArray(data.results) && data.results.length > 0) {
+        const predictedFraud = data.results[0].predicted_fraud;
+        
+        if (typeof predictedFraud === "boolean") {
+          const supabase = getSupabaseServerClient();
+          const { error } = await supabase
+            .from("orders")
+            .update({ predicted_fraud: predictedFraud })
+            .eq("order_id", features.orderId);
+            
+          if (error) {
+            console.error("Failed to update predicted_fraud in orders table:", error);
+          } else {
+            console.log(`Successfully updated order ${features.orderId} with predicted_fraud: ${predictedFraud}`);
+          }
+        }
+      }
+    } catch (parseErr) {
       console.log("Fraud score response (raw):", text);
     }
   } catch (err) {
