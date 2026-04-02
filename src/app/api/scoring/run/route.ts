@@ -187,3 +187,7 @@ export async function POST() {
     errors: errors.slice(0, 20)
   });
 }
+
+export async function GET() {
+  return POST();
+}
